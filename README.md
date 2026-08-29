@@ -8,3 +8,4 @@ this is my nixos config by noobs for noobs
 
 3: replace your waybar config to mine .
 
+4: do the same with hypralnd
