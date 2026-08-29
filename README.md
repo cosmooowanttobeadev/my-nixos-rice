@@ -2,3 +2,4 @@
 this is my nixos config by noobs for noobs
 
 # tutorial
+1: replace your /etc/nixos/configuration.nix with mine do the same with all of my nixos files
