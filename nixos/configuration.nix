@@ -85,6 +85,7 @@
 nixpkgs.config.allowUnfree = true;
   environment.systemPackages = with pkgs; [
 bat
+obs-studio
 qbittorrent
 fetch
 vscode
