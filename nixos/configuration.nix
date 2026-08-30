@@ -84,6 +84,8 @@
   # $ nix search wget
 nixpkgs.config.allowUnfree = true;
   environment.systemPackages = with pkgs; [
+virtualbox
+fortune
 bat
 obs-studio
 qbittorrent
