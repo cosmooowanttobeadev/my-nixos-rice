@@ -72,7 +72,7 @@
   },
 
   "clock": {
-    "format": "{:%m-%d-%Y %H:%M} "
+    "format": "{:%I:%M %p} "
   }
 }
 
