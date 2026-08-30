@@ -1,0 +1,12 @@
+use protobuf_codegen::Codegen;
+
+fn main() {
+    Codegen::new()
+        .cargo_out_dir("generated_proto")
+        .input("src/protos/query.proto")
+        .input("src/protos/activate.proto")
+        .input("src/protos/subscribe.proto")
+        .input("src/protos/providerstate.proto")
+        .include("src/protos")
+        .run_from_script();
+}

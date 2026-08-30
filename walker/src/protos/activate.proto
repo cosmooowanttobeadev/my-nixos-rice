@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "./pb";
+
+message ActivateRequest {
+  string provider = 1;
+  string identifier = 2;
+  string action = 3;
+  string query = 4;
+  string arguments = 5;
+  bool single = 6;
+}

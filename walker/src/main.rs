@@ -1,0 +1,855 @@
+mod config;
+mod data;
+mod keybinds;
+mod preview;
+mod protos;
+mod providers;
+mod renderers;
+mod state;
+mod theme;
+mod ui;
+mod wayland_blur;
+use gtk4::gio::prelude::{ApplicationCommandLineExt, DataInputStreamExtManual, SettingsExt};
+use gtk4::gio::{self, ApplicationCommandLine, ApplicationHoldGuard};
+use gtk4::glib::Priority;
+use gtk4::prelude::{EntryExt, ListModelExt};
+
+use config::get_config;
+use state::init_app_state;
+use which::which;
+
+use futures_channel::oneshot::{self, Sender};
+use std::cell::OnceCell;
+use std::os::fd::AsRawFd;
+use std::os::unix::net::UnixListener;
+use std::path::PathBuf;
+use std::process;
+use std::rc::Rc;
+use std::sync::RwLock;
+use std::thread;
+use std::{env, fs};
+
+use gtk4::{
+    Application,
+    gio::{
+        ApplicationFlags,
+        prelude::{ApplicationExt, ApplicationExtManual},
+    },
+    glib::{self, OptionFlags, VariantTy},
+    prelude::WidgetExt,
+};
+
+use crate::data::init_socket;
+use crate::keybinds::setup_binds;
+use crate::protos::QueryResponseObject;
+use crate::protos::generated_proto::query::{QueryResponse, query_response};
+use crate::providers::setup_providers;
+use crate::state::{
+    get_last_query, get_parameter_height, get_parameter_max_height, get_parameter_max_width,
+    get_parameter_min_height, get_parameter_min_width, get_parameter_width, get_placeholder,
+    get_provider, get_theme, has_elephant, has_theme, is_connected, is_dmenu, is_dmenu_keep_open,
+    is_emergency, is_input_only, is_no_hints, is_no_search, is_param_close, is_password_mode,
+    is_service, is_stay_open_explicit_provider, is_visible, set_current_set, set_dmenu_current,
+    set_dmenu_exit_after, set_dmenu_keep_open, set_error, set_has_elephant, set_hide_qa, set_index,
+    set_initial_height, set_initial_max_height, set_initial_max_width, set_initial_min_height,
+    set_initial_min_width, set_initial_placeholder, set_initial_width, set_input_only,
+    set_is_dmenu, set_is_emergency, set_is_service, set_is_stay_open_explicit_provider,
+    set_is_visible, set_no_hints, set_no_search, set_param_close, set_parameter_height,
+    set_parameter_max_height, set_parameter_max_width, set_parameter_min_height,
+    set_parameter_min_width, set_parameter_width, set_password_mode, set_placeholder, set_provider,
+    set_select_single, set_theme,
+};
+use crate::theme::{setup_css, setup_css_provider, setup_themes};
+use crate::ui::window::{
+    check_error, handle_grid_setting, quit, set_input_text, set_keybind_hint, set_placeholder_text,
+    setup_window, with_window,
+};
+
+static GLOBAL_DMENU_SENDER: RwLock<Option<Sender<String>>> = RwLock::new(None);
+
+thread_local! {
+    static HOLD_GUARD: OnceCell<ApplicationHoldGuard> = const { OnceCell::new() };
+}
+
+fn main() -> glib::ExitCode {
+    let app = Application::builder()
+        .application_id("dev.benz.walker")
+        .flags(ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
+
+    app.connect_handle_local_options(|_app, options| {
+        if options.contains("version") {
+            println!("{}", env!("CARGO_PKG_VERSION"));
+            return 0;
+        }
+        -1
+    });
+
+    add_flags(&app);
+
+    app.connect_command_line(handle_command_line);
+    app.connect_activate(activate);
+    app.connect_startup(startup);
+
+    app.run()
+}
+
+fn init_ui(app: &Application, dmenu: bool, theme: &str) {
+    if app.flags().contains(ApplicationFlags::IS_SERVICE) {
+        set_is_service(true);
+    }
+
+    config::load().unwrap();
+
+    let mut theme = if theme.is_empty() {
+        get_config().theme.as_str()
+    } else {
+        theme
+    };
+
+    if theme.is_empty() {
+        theme = "default";
+    }
+
+    set_theme(theme.to_string());
+
+    let mut elephant = false;
+
+    if !dmenu || is_service() {
+        elephant = which("elephant").is_ok();
+        set_has_elephant(elephant);
+    }
+
+    setup_providers(elephant);
+
+    setup_css_provider();
+
+    setup_binds();
+
+    setup_themes(elephant && !dmenu, get_theme(), is_service());
+
+    setup_window(app);
+
+    let settings = gio::Settings::new("org.gnome.desktop.interface");
+
+    adjust_color_scheme(&settings);
+    settings.connect_changed(Some("color-scheme"), move |s, _| {
+        adjust_color_scheme(s);
+    });
+
+    if let Some(schema) = settings.settings_schema() {
+        if schema.has_key("accent-color") {
+            adjust_accent_color(&settings);
+            settings.connect_changed(Some("accent-color"), move |s, _| {
+                adjust_accent_color(s);
+            });
+        }
+    }
+}
+
+fn adjust_accent_color(settings: &gio::Settings) {
+    with_window(|w| {
+        w.window
+            .css_classes()
+            .iter()
+            .filter(|c| c.starts_with("accent-"))
+            .for_each(|c| w.window.remove_css_class(c));
+
+        let new_accent_color = format!("accent-{}", settings.string("accent-color").as_str());
+        w.window.add_css_class(new_accent_color.as_str());
+    });
+}
+
+fn adjust_color_scheme(settings: &gio::Settings) {
+    with_window(|w| {
+        w.window.remove_css_class("dark");
+        w.window.remove_css_class("light");
+        match settings.string("color-scheme").as_str() {
+            "prefer-dark" => w.window.add_css_class("dark"),
+            "prefer-light" => w.window.add_css_class("light"),
+            _ => (),
+        }
+    });
+}
+
+fn send_message(message: String) {
+    let mut sender_guard = GLOBAL_DMENU_SENDER.write().unwrap();
+
+    if let Some(sender) = sender_guard.take() {
+        if sender.send(message).is_err() {
+            println!("the receiver dropped");
+        }
+
+        *sender_guard = None;
+    } else {
+        println!("No sender available");
+    }
+}
+
+fn add_flags(app: &Application) {
+    app.add_main_option(
+        "version",
+        b'v'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "show version",
+        None,
+    );
+
+    app.add_main_option(
+        "nosearch",
+        b'n'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "hide search input",
+        None,
+    );
+
+    app.add_main_option(
+        "nohints",
+        b'N'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "hide keybind hints",
+        None,
+    );
+
+    app.add_main_option(
+        "inputonly",
+        b'I'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "only show input. dmenu only.",
+        None,
+    );
+
+    app.add_main_option(
+        "password",
+        b'x'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "use as password input. sets dmenu automatically.",
+        None,
+    );
+
+    app.add_main_option(
+        "selectsingle",
+        b'X'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "auto-select single entry",
+        None,
+    );
+
+    app.add_main_option(
+        "index",
+        b'i'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "prints the selected index instead of its value. dmenu only.",
+        None,
+    );
+
+    app.add_main_option(
+        "provider",
+        b'm'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::String,
+        "exclusive provider to query",
+        None,
+    );
+
+    app.add_main_option(
+        "set",
+        b's'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::String,
+        "provider set to use",
+        None,
+    );
+
+    app.add_main_option(
+        "placeholder",
+        b'p'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::String,
+        "input placeholder.",
+        None,
+    );
+
+    app.add_main_option(
+        "height",
+        b'h'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "forced height. concerned with overall box. min 1. DONT USE SHORTHAND.",
+        None,
+    );
+
+    app.add_main_option(
+        "minheight",
+        b'h'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "min height. concerned with scrolled content. min 1.",
+        None,
+    );
+
+    app.add_main_option(
+        "maxheight",
+        b'h'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "max height. concerned with scrolled content. min 1.",
+        None,
+    );
+
+    app.add_main_option(
+        "current",
+        b'c'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "mark current value. dmenu only.",
+        None,
+    );
+
+    app.add_main_option(
+        "width",
+        b'w'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "forced width. concerned with overall box. min 1. DONT USE SHORTHAND.",
+        None,
+    );
+
+    app.add_main_option(
+        "minwidth",
+        b'w'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "min width. concerned with scrolled content. min 1.",
+        None,
+    );
+
+    app.add_main_option(
+        "maxwidth",
+        b'w'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::Int64,
+        "max width. concerned with scrolled content. min 1.",
+        None,
+    );
+
+    app.add_main_option(
+        "theme",
+        b't'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::String,
+        "theme to use",
+        None,
+    );
+
+    app.add_main_option(
+        "dmenu",
+        b'd'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "dmenu",
+        None,
+    );
+
+    app.add_main_option(
+        "close",
+        b'q'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "closes walker when open",
+        None,
+    );
+
+    app.add_main_option(
+        "hideqa",
+        b'H'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "hides quick activation buttons",
+        None,
+    );
+
+    app.add_main_option(
+        "keepopen",
+        b'k'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "keep walker open after selection. only when using service. dmenu only.",
+        None,
+    );
+
+    app.add_main_option(
+        "exit",
+        b'e'.into(),
+        OptionFlags::NONE,
+        glib::OptionArg::None,
+        "exit after this dmenu call. only when using service. dmenu only",
+        None,
+    );
+}
+
+fn handle_command_line(app: &Application, cmd: &ApplicationCommandLine) -> i32 {
+    let options = cmd.options_dict();
+
+    set_is_stay_open_explicit_provider(false);
+
+    if let Some(val) = options.lookup_value("provider", Some(VariantTy::STRING)) {
+        let p = val.str().unwrap().to_string();
+
+        set_is_stay_open_explicit_provider(get_provider() != p);
+
+        set_provider(val.str().unwrap().to_string());
+    } else {
+        set_is_stay_open_explicit_provider(!get_provider().is_empty());
+        set_provider("".to_string());
+    }
+
+    set_param_close(options.contains("close"));
+    set_hide_qa(options.contains("hideqa"));
+
+    if let Some(val) = options.lookup_value("theme", Some(VariantTy::STRING)) {
+        let theme = val.str().unwrap();
+
+        if has_theme(theme) {
+            set_theme(theme.to_string());
+        } else {
+            cmd.print_literal("theme not found. using default theme.\n");
+            set_theme("default".to_string());
+        }
+    }
+
+    if let Some(val) = options.lookup_value("set", Some(VariantTy::STRING)) {
+        let set = val.str().unwrap();
+        set_current_set(set.to_string());
+    }
+
+    set_parameter_height(None);
+    if let Some(val) = options.lookup_value("height", Some(VariantTy::INT64)) {
+        set_parameter_height(Some(val.get::<i64>().unwrap() as i32));
+    }
+
+    set_parameter_width(None);
+    if let Some(val) = options.lookup_value("width", Some(VariantTy::INT64)) {
+        set_parameter_width(Some(val.get::<i64>().unwrap() as i32));
+    }
+
+    set_parameter_min_width(None);
+    if let Some(val) = options.lookup_value("minwidth", Some(VariantTy::INT64)) {
+        set_parameter_min_width(Some(val.get::<i64>().unwrap() as i32));
+    }
+
+    set_parameter_min_height(None);
+    if let Some(val) = options.lookup_value("minheight", Some(VariantTy::INT64)) {
+        set_parameter_min_height(Some(val.get::<i64>().unwrap() as i32));
+    }
+
+    set_parameter_max_width(None);
+    if let Some(val) = options.lookup_value("maxwidth", Some(VariantTy::INT64)) {
+        set_parameter_max_width(Some(val.get::<i64>().unwrap() as i32));
+    }
+
+    set_parameter_max_height(None);
+    if let Some(val) = options.lookup_value("maxheight", Some(VariantTy::INT64)) {
+        set_parameter_max_height(Some(val.get::<i64>().unwrap() as i32));
+    }
+
+    set_no_search(options.contains("nosearch"));
+    set_no_hints(options.contains("nohints"));
+
+    set_select_single(options.contains("selectsingle"));
+
+    if options.contains("password") {
+        set_password_mode(true);
+        set_input_only(true);
+        options.insert("dmenu", true);
+    }
+
+    if let Some(val) = options.lookup_value("placeholder", Some(VariantTy::STRING)) {
+        set_placeholder(val.str().unwrap().to_string());
+    }
+
+    'dmenu: {
+        if !options.contains("dmenu") {
+            set_dmenu_keep_open(false);
+            set_is_dmenu(false);
+            break 'dmenu;
+        } else {
+            set_is_dmenu(true);
+
+            if is_emergency() {
+                set_error(String::new());
+                check_error();
+
+                set_is_emergency(false);
+            }
+        }
+
+        set_index(options.contains("index"));
+
+        set_input_only(options.contains("inputonly") || options.contains("password"));
+
+        if options.contains("keepopen") && app.flags().contains(ApplicationFlags::IS_SERVICE) {
+            set_dmenu_keep_open(true);
+        }
+
+        if let Some(val) = options.lookup_value("current", Some(VariantTy::INT64)) {
+            set_dmenu_current(val.get::<i64>().unwrap());
+        }
+
+        set_dmenu_exit_after(options.contains("exit"));
+
+        if GLOBAL_DMENU_SENDER.read().unwrap().is_some() {
+            send_message("CNCLD".to_string());
+            break 'dmenu;
+        }
+
+        with_window(|w| {
+            set_input_text("");
+            w.elephant_hint.set_visible(false);
+
+            if let Some(preview) = w.builder.object::<gtk4::Box>("Preview") {
+                preview.set_visible(false);
+            };
+
+            let items = w.items.clone();
+            items.remove_all();
+
+            if is_input_only() {
+                return;
+            }
+
+            let stdin = cmd.stdin();
+            let data_stream = gio::DataInputStream::new(&stdin.unwrap());
+
+            async fn read_lines_async(stream: Rc<gio::DataInputStream>, items: gio::ListStore) {
+                let mut i = 0;
+
+                const BATCH_SIZE: usize = 500;
+                let mut buffer: Vec<QueryResponseObject> = Vec::with_capacity(BATCH_SIZE);
+
+                loop {
+                    match stream.read_line_utf8_future(Priority::DEFAULT).await {
+                        Ok(Some(line)) => {
+                            if line.is_empty() {
+                                break;
+                            }
+
+                            let line = line.trim();
+
+                            if !line.is_empty() {
+                                let mut item = query_response::Item::new();
+                                item.text = line.to_string();
+                                item.provider = "dmenu".to_string();
+                                item.score = 1000000 - i;
+                                item.actions = vec!["select".to_string()];
+
+                                let mut response = QueryResponse::new();
+                                response.item = protobuf::MessageField::some(item);
+                                buffer.push(QueryResponseObject::new(response));
+                            }
+
+                            i += 1;
+
+                            if buffer.len() >= BATCH_SIZE {
+                                items.splice(items.n_items(), 0, &buffer);
+                                buffer.clear();
+                            }
+                        }
+                        Ok(None) => {
+                            set_keybind_hint();
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("Error reading: {e}");
+                            break;
+                        }
+                    }
+                }
+
+                // Process any remainders from the batch run, or if the data was smaller than single batch block
+                if !buffer.is_empty() {
+                    items.splice(items.n_items(), 0, &buffer);
+                }
+            }
+
+            glib::spawn_future_local(async move {
+                read_lines_async(Rc::new(data_stream), items).await;
+            });
+        });
+
+        if !is_service() {
+            break 'dmenu;
+        }
+
+        let (sender, receiver) = oneshot::channel();
+
+        *GLOBAL_DMENU_SENDER.write().unwrap() = Some(sender);
+
+        let cmd = cmd.clone();
+
+        glib::spawn_future_local(async move {
+            match receiver.await {
+                Ok(message) => match message.as_str() {
+                    "CNCLD" => {
+                        cmd.set_exit_status(130);
+                    }
+                    msg => cmd.print_literal(&format!("{msg}\n")),
+                },
+                Err(_) => {
+                    println!("the sender dropped");
+                    cmd.set_exit_status(130);
+                }
+            }
+
+            *GLOBAL_DMENU_SENDER.write().unwrap() = None;
+        });
+    }
+
+    app.activate();
+    0
+}
+
+fn activate(app: &Application) {
+    let cfg = get_config();
+
+    apply_flag_logic();
+
+    if is_dmenu() && is_visible() {
+        return;
+    }
+
+    if (!is_stay_open_explicit_provider()
+        && cfg.close_when_open
+        && is_visible()
+        && !is_dmenu_keep_open())
+        || is_param_close()
+    {
+        if is_visible() {
+            quit(app, false);
+        }
+
+        return;
+    }
+
+    if is_dmenu_keep_open() && is_visible() {
+        return;
+    }
+
+    if is_dmenu() {
+        handle_grid_setting();
+    }
+
+    with_window(|w| {
+        setup_css(get_theme());
+
+        if let Some(input) = &w.input {
+            if cfg.resume_last_query && !is_dmenu() {
+                set_input_text(&get_last_query(&get_provider()));
+            } else {
+                set_input_text("");
+            }
+            input.grab_focus();
+        }
+
+        w.window.set_visible(true);
+
+        if !is_dmenu() && !is_connected() && has_elephant() {
+            thread::spawn(|| init_socket().unwrap());
+        } else if !has_elephant() && !is_dmenu() {
+            println!("Please install elephant.");
+            process::exit(1);
+        }
+    });
+
+    if !get_provider().is_empty() {
+        with_window(|w| {
+            w.items.remove_all();
+        });
+    }
+
+    set_is_visible(true);
+}
+
+fn apply_flag_logic() {
+    let cfg = get_config();
+    let provider = get_provider();
+    let provider = if provider.is_empty() {
+        "default"
+    } else {
+        provider.as_str()
+    };
+
+    with_window(|w| {
+        if is_input_only() {
+            w.content_container.set_visible(false);
+            w.keybinds.set_visible(false);
+        }
+
+        if let Some(placeholders) = &cfg.placeholders
+            && let Some(placeholder) = placeholders.get(provider)
+        {
+            set_placeholder_text(&placeholder.input);
+
+            if let Some(p) = w.placeholder.as_ref() {
+                p.set_text(&placeholder.list)
+            }
+        }
+
+        if !get_placeholder().is_empty()
+            && let Some(input) = &w.input
+        {
+            if let Some(placeholder) = input.placeholder_text() {
+                set_initial_placeholder(placeholder.to_string());
+            }
+
+            set_placeholder_text(&get_placeholder());
+        }
+
+        if let Some(val) = get_parameter_height() {
+            set_initial_height(Some(w.box_wrapper.height_request()));
+            w.box_wrapper.set_height_request(val);
+        }
+
+        if let Some(val) = get_parameter_width() {
+            set_initial_width(Some(w.box_wrapper.width_request()));
+            w.box_wrapper.set_width_request(val);
+        }
+
+        if let Some(val) = get_parameter_min_width() {
+            set_initial_min_width(Some(w.scroll.min_content_width()));
+            w.scroll.set_min_content_width(val);
+        }
+
+        if let Some(val) = get_parameter_min_height() {
+            set_initial_min_height(Some(w.scroll.min_content_height()));
+            w.scroll.set_min_content_height(val);
+        }
+
+        if let Some(val) = get_parameter_max_width() {
+            set_initial_max_width(Some(w.scroll.max_content_width()));
+            w.scroll.set_max_content_width(val);
+        }
+
+        if let Some(val) = get_parameter_max_height() {
+            set_initial_max_height(Some(w.scroll.max_content_height()));
+            w.scroll.set_max_content_height(val);
+        }
+
+        if get_parameter_min_width().is_some() || get_parameter_max_width().is_some() {
+            set_initial_width(Some(w.box_wrapper.width_request()));
+            w.box_wrapper.set_width_request(-1);
+        }
+
+        if get_parameter_min_height().is_some() || get_parameter_max_height().is_some() {
+            set_initial_height(Some(w.box_wrapper.height_request()));
+            w.box_wrapper.set_height_request(-1);
+        }
+
+        if is_no_search()
+            && let Some(search_container) = &w.search_container
+        {
+            search_container.set_visible(false);
+        }
+
+        if is_no_hints() {
+            w.keybinds.set_visible(false);
+        }
+
+        if let Some(input) = &w.input {
+            input.set_visibility(!is_password_mode());
+        }
+    });
+}
+
+fn startup(app: &Application) {
+    let args: Vec<String> = env::args().collect();
+    let dmenu = args.contains(&"--dmenu".to_string()) || args.contains(&"-d".to_string());
+    let version = args.contains(&"--version".to_string()) || args.contains(&"-v".to_string());
+    let is_service = app.flags().contains(ApplicationFlags::IS_SERVICE);
+
+    if !is_service && (args.contains(&"--close".to_string()) || args.contains(&"-q".to_string())) {
+        process::exit(0);
+    }
+
+    let theme = if let Some(i) = args.iter().position(|a| a == "-t" || a == "--theme") {
+        if let Some(res) = args.get(i + 1) {
+            res
+        } else {
+            ""
+        }
+    } else {
+        ""
+    };
+
+    if version {
+        return;
+    }
+
+    if !app.flags().contains(ApplicationFlags::IS_SERVICE) && !dmenu {
+        println!("make sure 'walker --gapplication-service' is running!");
+    }
+
+    HOLD_GUARD.with(|h| h.set(app.hold()).expect("couldn't set hold-guard"));
+
+    init_app_state();
+    init_ui(app, dmenu, theme);
+
+    listen_activation_socket(app.clone());
+}
+
+fn listen_activation_socket(app_clone: Application) {
+    let mut socket_path = env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| env::temp_dir());
+
+    socket_path.push("walker");
+    if !socket_path.exists() {
+        fs::create_dir(&socket_path).unwrap();
+    }
+
+    socket_path.push("walker.sock");
+
+    let _ = fs::remove_file(&socket_path);
+
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+
+    let fd = listener.as_raw_fd();
+
+    glib::unix_fd_add_local(fd, glib::IOCondition::IN, move |_fd, condition| {
+        if condition.contains(glib::IOCondition::IN) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    drop(stream);
+                    set_parameter_width(None);
+                    set_parameter_height(None);
+                    set_parameter_min_width(None);
+                    set_parameter_max_width(None);
+                    set_parameter_min_height(None);
+                    set_parameter_max_height(None);
+                    set_is_dmenu(false);
+                    set_dmenu_keep_open(false);
+                    set_param_close(false);
+                    set_hide_qa(false);
+                    set_provider("".to_string());
+                    set_is_stay_open_explicit_provider(false);
+
+                    activate(&app_clone);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => {
+                    eprintln!("Error accepting connection: {}", e);
+                    return glib::ControlFlow::Break;
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+}

@@ -1,0 +1,34 @@
+[package]
+name = "walker"
+version = "2.17.0"
+edition = "2024"
+
+[dependencies]
+gtk4 = { version = "^0.9.7", features = ["v4_6", "v4_12", "gio_v2_80"] }
+gtk4-layer-shell = "0.5.0"
+gdk4-wayland = { version = "^0.9", features = ["v4_12", "wayland_crate"] }
+wayland-client = { version = "0.31", features = ["dlopen"] }
+wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
+wayland-scanner = "0.31"
+bitflags = "2"
+protobuf = "3.7.2"
+grass = "0.13.4"
+serde = { version = "1.0.219", features = ["derive"] }
+chrono = { version = "0.4", features = ["clock"] }
+config = "0.15.14"
+dirs = "6.0.0"
+notify = "8.2.0"
+poppler-rs = "0.25.0"
+cairo-rs = "0.21.1"
+gdk-pixbuf = "0.21.1"
+nucleo-matcher = "0.3.1"
+which = "8.0"
+new_mime_guess = "4.0.4"
+mime = "0.3.17"
+futures-channel = "0.3"
+xdg = "3.0.0"
+chrono-humanize = "0.2.3"
+
+[build-dependencies]
+protobuf-codegen = "3.4"
+protoc-bin-vendored = "3.0"
