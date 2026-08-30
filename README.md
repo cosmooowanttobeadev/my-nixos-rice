@@ -23,7 +23,7 @@ feel free to make a your on configs and share in your own repos with my code .
 
 <img width="1600" height="900" alt="screenshot-2026-08-30_12-11-11" src="https://github.com/user-attachments/assets/549ca25f-4ca3-4f6e-9b5e-6bed0e85b788" />
 
-#keybindings
+# keybindings
 
 SUPER + Q for terminal
 
