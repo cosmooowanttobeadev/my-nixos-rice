@@ -1,4 +1,4 @@
-<img width="1600" height="900" alt="screenshot-2026-08-30_12-11-11" src="https://github.com/user-attachments/assets/d5743756-c5b2-40f7-822f-640c6eec6ce8" /># my-nixos-rice
+# my-nixos-rice
 this is my nixos config by noobs for noobs
 
 # tutorial
