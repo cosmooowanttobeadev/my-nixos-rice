@@ -3,6 +3,8 @@ this is my nixos config by noobs for noobs.
 
 feel free to make a your on configs and share in your own repos with my code .
 
+this is how i know how to use it if you know pls tell me how.
+
 # tutorial
 1:download nixos gnome. 
 
