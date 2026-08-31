@@ -5,6 +5,8 @@ feel free to make a your on configs and share in your own repos with my code .
 
 this is how i know how to use it if you know pls tell me how.
 
+
+
 # tutorial
 1:download nixos gnome. 
 
@@ -36,5 +38,7 @@ SUPER + SHIFT + B to open firefox
 SUPER + SHIFT + V to open vscode
 
 SUPER + SPACE to open app launcher
+
+SUPER + Esc to open wlogout
 
 for some people, the SUPER key is called windows key 
