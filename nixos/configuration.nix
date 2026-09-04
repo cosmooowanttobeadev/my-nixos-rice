@@ -168,4 +168,11 @@ environment.sessionVariables = {
 
 virtualisation.virtualbox.host.enable = true;
 
+#zramSwap
+
+zramSwap ={
+enable = true;
+memoryPercent = 50;
+};
+
 }
