@@ -41,4 +41,6 @@ SUPER + SPACE to open app launcher
 
 SUPER + Esc to open wlogout
 
+SUPER + SHIFT + N to open nvim
+
 for some people, the SUPER key is called windows key 
