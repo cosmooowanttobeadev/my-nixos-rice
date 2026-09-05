@@ -269,6 +269,7 @@ hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
 hl.bind(mainMod .. " + SHIFT + B", hl.dsp.exec_cmd("firefox"))
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("code"))
+hl.bind(mainMod .. " + SHIFT + N", hl.dsp.exec_cmd("kitty -e nvim"))
 hl.bind("Print", hl.dsp.exec_cmd(
     "grim ~/Pictures/Screenshots/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png"
 ))
