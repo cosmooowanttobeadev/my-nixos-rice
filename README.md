@@ -7,6 +7,10 @@ this is how i know how to use it if you know pls tell me how.
 
 
 
+https://github.com/user-attachments/assets/7ea471aa-c0cd-4db0-96e4-d2141fcb8257
+
+
+
 # tutorial
 1:download nixos gnome. 
 
