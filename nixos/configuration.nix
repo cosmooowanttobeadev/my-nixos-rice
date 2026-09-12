@@ -84,6 +84,7 @@
   # $ nix search wget
 nixpkgs.config.allowUnfree = true;
   environment.systemPackages = with pkgs; [
+vscodium
 sl
 hyprlock
 wlogout
@@ -92,7 +93,6 @@ bat
 obs-studio
 qbittorrent
 fetch
-vscode
 awww
 nerd-fonts.jetbrains-mono
 fish
