@@ -1,4 +1,3 @@
-
 -----------------------------------------------------------
 -- EDIT THIS CONFIG ACCORDING TO THE WIKI INSTRUCTIONS.  --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -270,6 +269,7 @@ hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
 hl.bind(mainMod .. " + SHIFT + B", hl.dsp.exec_cmd("firefox"))
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.exec_cmd("codium"))
 hl.bind(mainMod .. " + SHIFT + N", hl.dsp.exec_cmd("kitty -e nvim"))
+hl.bind(mainMod .. " + SHIFT + G", hl.dsp.exec_cmd("godot"))
 hl.bind("Print", hl.dsp.exec_cmd(
     "grim ~/Pictures/Screenshots/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png"
 ))
