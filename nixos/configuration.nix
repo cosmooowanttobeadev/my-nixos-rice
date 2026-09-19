@@ -84,6 +84,12 @@
   # $ nix search wget
 nixpkgs.config.allowUnfree = true;
   environment.systemPackages = with pkgs; [
+brave
+libnotify
+mako
+python3Packages.pygame
+sqlite
+nodejs
 godot
 vscodium
 sl
