@@ -84,6 +84,7 @@
   # $ nix search wget
 nixpkgs.config.allowUnfree = true;
   environment.systemPackages = with pkgs; [
+
 brave
 libnotify
 mako
