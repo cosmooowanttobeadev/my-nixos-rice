@@ -7,9 +7,6 @@ this is how i know how to use it if you know pls tell me how.
 
 
 
-https://github.com/user-attachments/assets/7ea471aa-c0cd-4db0-96e4-d2141fcb8257
-
-
 
 # tutorial
 1:download nixos gnome. 
@@ -23,14 +20,21 @@ https://github.com/user-attachments/assets/7ea471aa-c0cd-4db0-96e4-d2141fcb8257
 5: do the same with walker
 
 
-<img width="1600" height="900" alt="screenshot-2026-08-30_12-08-43" src="https://github.com/user-attachments/assets/3e0b6972-7fab-4db9-ae6b-1d0c42165ab7" />
+<img width="1600" height="900" alt="screenshot-2026-09-22_20-55-33" src="https://github.com/user-attachments/assets/123df88d-6eac-453f-838f-1ea9bfdde35a" />
 
-<img width="1600" height="900" alt="screenshot-2026-08-30_12-08-54" src="https://github.com/user-attachments/assets/406b1400-e824-4c12-8bdf-fed8556b35ce" />
 
-<img width="1600" height="900" alt="screenshot-2026-08-30_12-09-01" src="https://github.com/user-attachments/assets/410f31a2-eb67-4b89-ac4e-19c0f048cd04" />
+<img width="1600" height="900" alt="screenshot-2026-09-22_20-55-39" src="https://github.com/user-attachments/assets/619cf841-74c1-41e4-b738-60bd56d6108f" />
 
-<img width="1600" height="900" alt="screenshot-2026-08-30_12-11-11" src="https://github.com/user-attachments/assets/549ca25f-4ca3-4f6e-9b5e-6bed0e85b788" />
+<img width="1600" height="900" alt="screenshot-2026-09-22_20-55-57" src="https://github.com/user-attachments/assets/74064790-ef75-454f-8ae6-f4a33f922bc4" />
 
+
+<img width="1600" height="900" alt="screenshot-2026-09-22_20-56-54" src="https://github.com/user-attachments/assets/3766e1c0-3d7c-4eda-832a-c33e2771aecf" />
+
+
+<img width="1600" height="900" alt="screenshot-2026-09-22_20-57-26" src="https://github.com/user-attachments/assets/47303617-5a37-4aba-ab6f-9bcdccc741dd" />
+
+
+<img width="1600" height="900" alt="screenshot-2026-09-22_20-57-46" src="https://github.com/user-attachments/assets/d8b0f1e7-d516-4e96-8b7c-1bea5f67672f" />
 
 
 # keybindings
