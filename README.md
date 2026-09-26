@@ -53,4 +53,6 @@ SUPER + Esc to open wlogout
 
 SUPER + SHIFT + N to open nvim
 
+SUPER + SHIFT + G godot
+
 for some people, the SUPER key is called windows key 
