@@ -1,0 +1,90 @@
+{
+  "layer": "top",
+  "position": "top",
+  "spacing": 3,
+  "height": 1,
+  "margin-top": 0,
+  "margin-left": 0,
+  "margin-right": 0,
+
+  "modules-left": [
+    "hyprland/workspaces",
+    "custom/cpucat"
+  ],
+  "modules-center": [
+    "clock#time",
+  ],
+  "modules-right": [
+    "wireplumber",
+    "backlight",
+    "battery",
+    "mpris",
+    "clock#date",
+    "custom/power"
+  ],
+  "custom/tab": {
+  "format": "[Z]",
+  "on-click": "rofi -show drun",
+},
+  "hyprland/workspaces": {
+    "format": "{name}",
+    "on-click": "activate",
+    "sort-by-number": true
+  },
+
+  "mpris": {
+    "format": "  {artist} - {title} ",
+    "format-paused": " 󰐊 {artist} - {title} ",
+    "max-length": 37,
+    "tooltip": true,
+    "player": "spotify"
+  },
+
+  "tray": {
+    "icon-size": 16,
+    "spacing": 6
+  },
+  "custom/cpucat": {
+    "exec":"/home/aadidev/.config/waybar/scripts/catloop.sh"
+  },
+  "wireplumber": {
+    "scroll-step": 5,
+    "format": " {icon} {volume}%",
+    "format-muted": "󰝟 muted",
+    "on-click": "pavucontrol",
+    "format-icons": {
+      "default": ["󰕿", "󰖀", "󰕾"],
+      "headphones": "󰋋",
+      "headset": "󰋎"
+    }
+  },
+
+  "backlight": {
+    "device": "intel_backlight",
+    "format": " {icon} {percent}% ",
+    "format-icons": ["󰃞", "󰃟", "󰃠"]
+  },
+
+  "battery": {
+    "states": { "warning": 30, "critical": 15 },
+    "format": "{icon} {capacity}% ",
+    "format-charging": "󰂄 {capacity}% ",
+    "format-plugged": "󱟦 {capacity}% ",
+    "format-full": "󰁹 {capacity}% ",
+    "format-icons": [
+      "󰂎", "󰁺", "󰁻", "󰁼", "󰁽",
+      "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"
+    ]
+  },
+
+"clock#time": {
+    "format": "{:%I:%M %p}"
+},
+
+"clock#date": {
+    "format": "{:%a %d %b %Y}"
+},
+  
+}
+
+
